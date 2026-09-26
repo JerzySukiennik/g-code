@@ -248,6 +248,15 @@ class Thing {
     this.trailColor = resolveColor(color, this.core.rng) || this.color;
     return this;
   }
+  ricochet(speed = 8) {
+    const c = this.core;
+    const a0 = (c.rng() < 0.5 ? -1 : 1) * (0.5 + c.rng() * 0.5);
+    this.ricochetOn = true;
+    if (c.view === 'top') this.drift = { x: Math.cos(a0) * speed, y: 0, z: -Math.sin(Math.abs(a0)) * speed };
+    else this.drift = { x: Math.sin(a0) * speed * 0.7, y: speed * 0.7, z: 0 };
+    this.ricoSpeed = speed;
+    return this;
+  }
   fall(gravity = 1) {
     this.phys = true;
     this.gMult = gravity;
@@ -281,6 +290,7 @@ class Thing {
     if (typeof o === 'number') o = { every: o };
     const c = this.core;
     const every = o.every ?? 0;
+    if (!c.slots.has(slot)) c.register(slot, new Thing(c, slot, { shape: o.shape || 'bullet', color: o.color || (this.control ? 'yellow' : 'red'), size: o.size ?? 1 }), 'bullet');
     const cooldown = o.cooldown ?? (every > 0 ? every : 0.22);
     let tt = every > 0 ? c.rng() * every : 0;
     this.behaviors.push((t, dt) => {
@@ -364,7 +374,9 @@ function defaultColor(slot, shape, rng) {
   if (/cloud|snow|ghost/.test(s) || shape === 'cloud' || shape === 'ghost') return COLORS.white;
   if (/bullet|laser/.test(s)) return COLORS.yellow;
   if (/platform|box|ground/.test(s)) return COLORS.brown;
-  return Object.values(COLORS)[Math.floor(rng() * 12)];
+  let h = 0;
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return Object.values(COLORS)[h % 12];
 }
 
 class Group {
@@ -429,6 +441,8 @@ export function createCore({ seed = 1, headless = false } = {}) {
     timers: [],
     keyHandlers: [],
     clickHandlers: [],
+    tapHandlers: [],
+    outHandlers: [],
     particles: [],
     messages: [],
     warnings: [],
@@ -454,19 +468,21 @@ export function createCore({ seed = 1, headless = false } = {}) {
     pressed,
     pointer: { u: 0, v: 0, down: false, clicked: false },
     down(k) {
-      if (k === 'space') return keyState.has(' ') || keyState.has('space');
-      if (k === 'left') return keyState.has('arrowleft') || keyState.has('a');
-      if (k === 'right') return keyState.has('arrowright') || keyState.has('d');
-      if (k === 'up') return keyState.has('arrowup') || keyState.has('w');
-      if (k === 'down') return keyState.has('arrowdown') || keyState.has('s');
+      const ks = this.keys;
+      if (k === 'space') return ks.has(' ') || ks.has('space');
+      if (k === 'left') return ks.has('arrowleft') || ks.has('a');
+      if (k === 'right') return ks.has('arrowright') || ks.has('d');
+      if (k === 'up') return ks.has('arrowup') || ks.has('w');
+      if (k === 'down') return ks.has('arrowdown') || ks.has('s');
       if (k === 'click') return this.pointer.down;
-      return keyState.has(String(k).toLowerCase());
+      return ks.has(String(k).toLowerCase());
     },
     hit(k) {
-      if (k === 'space') return pressed.has(' ') || pressed.has('space');
-      if (k === 'up') return pressed.has('arrowup') || pressed.has('w');
+      const ps = this.pressed;
+      if (k === 'space') return ps.has(' ') || ps.has('space');
+      if (k === 'up') return ps.has('arrowup') || ps.has('w');
       if (k === 'click') return this.pointer.clicked;
-      return pressed.has(String(k).toLowerCase());
+      return ps.has(String(k).toLowerCase());
     },
   };
 
@@ -672,6 +688,8 @@ export function createCore({ seed = 1, headless = false } = {}) {
   api.after = (sec, fn) => { c.timers.push({ every: 0, t: sec, fn }); };
   api.key = (k, fn) => { c.keyHandlers.push({ k: String(k).toLowerCase(), fn }); };
   api.click = (fn) => { c.clickHandlers.push(fn); };
+  api.tap = (slot, fn) => { c.tapHandlers.push({ slot, fn }); };
+  api.out = (slot, fn) => { c.outHandlers.push({ slot, fn }); };
 
   api.score = (n) => {
     if (c.hud.score == null) c.hud.score = 0;
@@ -859,7 +877,22 @@ export function createCore({ seed = 1, headless = false } = {}) {
       }
     }
     for (const h of c.keyHandlers) if (c.input.hit(h.k)) run(h.fn);
-    if (c.input.pointer.clicked) for (const fn of c.clickHandlers) run(() => fn({ x: c.input.pointer.u, y: c.input.pointer.v }));
+    if (c.input.pointer.clicked) {
+      for (const fn of c.clickHandlers) run(() => fn({ x: c.input.pointer.u, y: c.input.pointer.v }));
+      if (c.tapHandlers.length) {
+        const p = c.plane(c.input.pointer.u, c.input.pointer.v, 0);
+        for (const h of c.tapHandlers) {
+          let best = null, bd = Infinity;
+          for (const t of c.things) {
+            if (!t.alive || t.slot !== h.slot) continue;
+            const q = { x: t.pos.x + t.offset.x, y: t.pos.y + t.offset.y, z: t.pos.z };
+            const d = c.view === 'top' ? Math.hypot(q.x - p.x, q.z - p.z) : Math.hypot(q.x - p.x, q.y - p.y);
+            if (d < Math.max(t.r * 1.3, 0.8) && d < bd) { bd = d; best = t; }
+          }
+          if (best) run(() => h.fn(wrap(best, c)));
+        }
+      }
+    }
 
     const list = c.things;
     for (const t of list) {
@@ -911,12 +944,39 @@ export function createCore({ seed = 1, headless = false } = {}) {
         if (c.view === 'side') { if (t.pos.y > a.h + t.half(1)) t.pos.y = -t.half(1) + 0.01; else if (t.pos.y < -t.half(1) - 0.02 && c.world.ground === 'none') t.pos.y = a.h; }
         else { const hh = a.h / 2 + t.half(2); if (t.pos.z > hh) t.pos.z -= hh * 2; else if (t.pos.z < -hh) t.pos.z += hh * 2; }
       }
+      if (t.ricochetOn) {
+        const hw = a.w / 2 - t.half(0);
+        if (t.pos.x < c.cam.x - hw && t.drift.x < 0 || t.pos.x > c.cam.x + hw && t.drift.x > 0) { t.drift.x *= -1; c.sound('bounce'); }
+        if (c.view === 'top') {
+          const hh = a.h / 2 - t.half(2);
+          if (t.pos.z < -hh && t.drift.z < 0) { t.drift.z *= -1; c.sound('bounce'); }
+        } else if (t.pos.y > a.h - t.half(1) && t.drift.y > 0) { t.drift.y *= -1; c.sound('bounce'); }
+        for (const o of list) {
+          if (o === t || !o.alive || !(o.solidOn || o.isPlayer)) continue;
+          if (!overlap(t, o)) continue;
+          if (c.view === 'top') {
+            if (Math.abs(t.pos.x - o.pos.x) / (o.half(0) + t.half(0)) > Math.abs(t.pos.z - o.pos.z) / (o.half(2) + t.half(2))) t.drift.x = Math.abs(t.drift.x) * Math.sign(t.pos.x - o.pos.x || 1);
+            else t.drift.z = Math.abs(t.drift.z) * Math.sign(t.pos.z - o.pos.z || 1);
+          } else if (o.isPlayer) {
+            const k = clamp((t.pos.x - o.pos.x) / (o.half(0) + t.half(0)), -1, 1);
+            const sp = t.ricoSpeed || 8;
+            t.drift.x = k * sp * 0.8; t.drift.y = Math.sqrt(Math.max(1, sp * sp - t.drift.x * t.drift.x)) * Math.sign(t.pos.y - o.pos.y || 1);
+          } else if (Math.abs(t.pos.x - o.pos.x) / (o.half(0) + t.half(0)) > Math.abs(t.pos.y - o.pos.y) / (o.half(1) + t.half(1))) t.drift.x = Math.abs(t.drift.x) * Math.sign(t.pos.x - o.pos.x || 1);
+          else t.drift.y = Math.abs(t.drift.y) * Math.sign(t.pos.y - o.pos.y || 1);
+          c.sound('bounce');
+        }
+        if (c.view === 'side' ? t.pos.y < -1 : t.pos.z > a.h / 2 + 1) { t.alive = false; t.wentOut = true; }
+      }
       if (t.rainbowOn) t.color = hsl(t.age * 120 * (t.rainbowSpeed || 1) + t.id * 40);
       if (t.trailColor && c.rng() < 0.6) c.particles.push({ x: t.pos.x + t.offset.x, y: t.pos.y + t.offset.y, z: t.pos.z, vx: 0, vy: 0.3, vz: 0, life: 0.5, max: 0.5, color: t.trailColor, size: t.r * 0.5 });
       if (t.life != null) { t.life -= dt; if (t.life <= 0) t.alive = false; }
       if (t.spawned && !t.wrapOn) {
         const far = Math.abs(t.pos.x - c.cam.x) > a.w + 6 || t.pos.y < -8 || t.pos.y > a.h + 12 || Math.abs(t.pos.z) > a.w + 6;
-        if (far) t.alive = false;
+        if (far) { t.alive = false; t.wentOut = true; }
+      }
+      if (t.wentOut && !t.outFired) {
+        t.outFired = true;
+        for (const h of c.outHandlers) if (h.slot === t.slot) run(() => h.fn(wrap(t, c)));
       }
       if (!Number.isFinite(t.pos.x + t.pos.y + t.pos.z)) { t.alive = false; c.warn('a thing flew off to infinity'); }
     }
@@ -981,7 +1041,7 @@ export function createCore({ seed = 1, headless = false } = {}) {
   return c;
 }
 
-export const API_NAMES = ['world', 'add', 'scatter', 'spawn', 'hit', 'onHit', 'every', 'after', 'key', 'click', 'score', 'lives',
+export const API_NAMES = ['world', 'add', 'scatter', 'spawn', 'hit', 'onHit', 'every', 'after', 'key', 'click', 'tap', 'out', 'score', 'lives',
   'hurt', 'heal', 'timer', 'goal', 'title', 'say', 'win', 'lose', 'sound', 'music', 'shake', 'burst', 'random', 'pick',
   'find', 'all', 'count', 'camera', 'platforms', 'walls', 'maze', 'log'];
 export { THING_METHODS };

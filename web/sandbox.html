@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>G-Code Engine Sandbox</title>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
+<style>
+  body{margin:0;display:grid;grid-template-columns:420px 1fr;height:100vh;background:#0c0c0e;color:#ddd;font:13px ui-monospace,Menlo,monospace}
+  textarea{background:#111114;color:#e8e8ea;border:0;padding:14px;resize:none;font:inherit;line-height:1.5;outline:none}
+  #stage{height:100vh}
+  .side{display:grid;grid-template-rows:auto 1fr auto}
+  .bar{display:flex;flex-wrap:wrap;gap:6px;padding:10px;border-bottom:1px solid #222}
+  button{background:#1d1d22;color:#ddd;border:1px solid #333;border-radius:6px;padding:4px 8px;font:inherit;cursor:pointer}
+  #log{padding:10px;color:#f5b700;min-height:40px;border-top:1px solid #222;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="side">
+  <div class="bar" id="presets"></div>
+  <textarea id="code" spellcheck="false"></textarea>
+  <div id="log"></div>
+</div>
+<div id="stage"></div>
+<script type="module">
+import { mount } from '../engine/gcode.js';
+const P = {
+  sphere: `world({ mode: '2d', sky: 'day', ground: 'grass' })\nadd('ball', { shape: 'sphere', color: 'green', size: 1.5 }).jump(3)`,
+  sphere3d: `world({ mode: '3d', sky: 'day', ground: 'grass' })\nadd('ball', { shape: 'sphere', color: 'green', size: 1.5 }).jump(3)`,
+  shooter: `world({ mode: '2d', sky: 'space', ground: 'none', title: 'Space Shooter' })\nadd('player', { shape: 'rocket', color: 'white', y: 1.5 }).controls('paddle', 8).shoot('laser', { color: 'cyan' })\nspawn('enemy', { shape: 'ufo', color: 'green', every: 1, from: 'top' }).move('down', 3).wobble()\nhit('laser', 'enemy', (l, e) => { l.remove(); e.explode(); score(1) })\nhit('player', 'enemy', () => hurt())\nlives(3)\ngoal(20)\nmusic('retro')`,
+  platformer: `world({ mode: '2d', sky: 'sunset', ground: 'grass' })\nadd('hero', { shape: 'person', color: 'blue', x: -8 }).controls('platformer').jump(4)\nplatforms(6)\nadd('coin', { count: 8, shape: 'coin' }).float(0.3).spin(0.5)\nadd('slime', { color: 'lime', x: 5, shape: 'sphere' }).patrol(3, 2).bounce(1)\nhit('hero', 'coin', (h, c) => { c.remove(); score(1); sound('coin') })\nhit('hero', 'slime', () => hurt())\nlives(3)`,
+  cars: `world({ mode: '3d', view: 'top', sky: 'day', ground: 'sand' })\nadd('player', { shape: 'car', color: 'red' }).controls('car', 7)\nscatter('coin', { count: 12, shape: 'coin' }).spin(1)\nscatter('tree', { count: 8, shape: 'tree' }).solid()\nspawn('enemy', { shape: 'cube', color: 'purple', every: 3, from: 'around' }).follow('player', 2.5)\nhit('player', 'coin', (p, c) => { c.pop(); score(1); sound('coin') })\nhit('player', 'enemy', () => lose())\ntimer(60, 'win')`,
+  zoo: `world({ mode: '3d', sky: 'night', ground: 'snow', weather: 'snow', camera: 'orbit' })\nconst shapes = ['sphere','cube','cylinder','cone','pyramid','torus','capsule','coin','star','heart','diamond','tree','house','rocket','car','cloud','person','fish','bird','ghost','flower','rock','ufo','mushroom','snowman','cat','dog']\nshapes.forEach((s, i) => add(s, { shape: s, x: (i % 9 - 4) * 2.4, y: 0, z: Math.floor(i / 9) * 3 - 3, color: 'random' }).spin(0.2))`,
+};
+const pre = document.getElementById('presets'), ta = document.getElementById('code'), log = document.getElementById('log');
+const game = mount(document.getElementById('stage'), { onState: (s) => { log.textContent = `${s.mode} ${s.view} · slots: ${s.slots.map(x => x.slot).join(', ')}` + (s.warnings.length ? '\n' + s.warnings.join('\n') : '') + (s.error ? '\nERROR ' + s.error.message : ''); } });
+for (const [k, v] of Object.entries(P)) { const b = document.createElement('button'); b.textContent = k; b.onclick = () => { ta.value = v; game.run(v); }; pre.appendChild(b); }
+let tm; ta.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => game.run(ta.value), 300); });
+ta.value = P.sphere; game.run(P.sphere);
+window.game = game;
+</script>
+</body>
+</html>
