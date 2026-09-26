@@ -214,6 +214,12 @@ export function createRender3D(canvas) {
       const fwd = new THREE.Vector3(Math.sin(h), 0, -Math.cos(h));
       pos = new THREE.Vector3(tgt.pos.x, tgt.pos.y + 4, tgt.pos.z).addScaledVector(fwd, -9);
       look = new THREE.Vector3(tgt.pos.x, tgt.pos.y + 1, tgt.pos.z).addScaledVector(fwd, 4);
+    } else if (c.frame) {
+      const f = c.frame;
+      const vt = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const d = Math.max(f.w / (2 * vt * camera.aspect), f.h / (2 * vt)) * 1.05 + 2;
+      if (c.view === 'top') { pos = new THREE.Vector3(f.x, d * 0.82, -f.y + d * 0.58); look = new THREE.Vector3(f.x, 0, -f.y); }
+      else { pos = new THREE.Vector3(f.x, f.y + d * 0.22, d); look = new THREE.Vector3(f.x, f.y, 0); }
     } else if (c.view === 'top') {
       pos = new THREE.Vector3(c.cam.x, 19, (c.cam.z || 0) + 13); look = new THREE.Vector3(c.cam.x, 0, c.cam.z || 0);
     } else {

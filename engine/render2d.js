@@ -42,11 +42,10 @@ export function createRender2D(canvas) {
     const top = c.view === 'top';
     const a = c.arena();
     const band = top ? 0 : 1.4;
-    const sc = Math.min(W / a.w, H / (a.h + band));
+    const { sc, ox: ox0, oy: oy0 } = view(c);
     const shx = c.cam.shake > 0 ? (Math.random() - 0.5) * c.cam.shake * 18 : 0;
     const shy = c.cam.shake > 0 ? (Math.random() - 0.5) * c.cam.shake * 18 : 0;
-    const ox = W / 2 - c.cam.x * sc + shx;
-    const oy = top ? H / 2 - (c.cam.z || 0) * sc + shy : H - band * sc - (H - (a.h + band) * sc) / 2 + shy;
+    const ox = ox0 + shx, oy = oy0 + shy;
     const P = top
       ? (x, y, z) => [ox + x * sc, oy + z * sc - y * sc * 0.35]
       : (x, y) => [ox + x * sc, oy - y * sc];
@@ -186,13 +185,23 @@ export function createRender2D(canvas) {
     }
   }
 
-  function toPlane(c, px, py) {
+  function view(c) {
     const top = c.view === 'top';
     const a = c.arena();
     const band = top ? 0 : 1.4;
+    const f = c.frame;
+    if (f) {
+      const sc = Math.min(W / f.w, H / (f.h + band));
+      if (top) return { sc, ox: W / 2 - f.x * sc, oy: H / 2 + f.y * sc };
+      return { sc, ox: W / 2 - f.x * sc, oy: f.y0 <= 0 ? H - band * sc : H / 2 + f.y * sc };
+    }
     const sc = Math.min(W / a.w, H / (a.h + band));
-    const ox = W / 2 - c.cam.x * sc;
-    const oy = top ? H / 2 - (c.cam.z || 0) * sc : H - band * sc - (H - (a.h + band) * sc) / 2;
+    return { sc, ox: W / 2 - c.cam.x * sc, oy: top ? H / 2 - (c.cam.z || 0) * sc : H - band * sc - (H - (a.h + band) * sc) / 2 };
+  }
+
+  function toPlane(c, px, py) {
+    const top = c.view === 'top';
+    const { sc, ox, oy } = view(c);
     return top ? { u: (px - ox) / sc, v: -(py - oy) / sc } : { u: (px - ox) / sc, v: (oy - py) / sc };
   }
 

@@ -1036,6 +1036,23 @@ export function createCore({ seed = 1, headless = false } = {}) {
     const fn = new Function(...names, '"use strict";\n' + code);
     fn(...names.map((n) => api[n]));
     if (c.world.camera === 'auto') c.world.camera = 'fixed';
+    c.frame = null;
+    const statics = c.things.filter((t) => t.alive);
+    if (!c.hasPlayer && !c.spawners.length && statics.length && c.world.camera !== 'follow') {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const t of statics) {
+        const moving = t.behaviors.length && (t.drift.x || t.drift.y || t.drift.z || t.boundedOn);
+        if (moving) { x0 = -12; x1 = 12; }
+        const a = c.view === 'top' ? -t.pos.z : t.pos.y;
+        const r = Math.max(t.half(0), t.half(c.view === 'top' ? 2 : 1)) * 1.4 + (t.home && t.behaviors.length ? 1.5 : 0);
+        x0 = Math.min(x0, t.pos.x - r); x1 = Math.max(x1, t.pos.x + r);
+        y0 = Math.min(y0, a - r); y1 = Math.max(y1, a + r + (c.view === 'top' ? 0 : 3.5));
+      }
+      const ar = c.arena();
+      if (c.view === 'side') y0 = Math.min(y0, 0);
+      const w = Math.min(ar.w, Math.max(9, x1 - x0 + 3)), h = Math.min(ar.h, Math.max(6, y1 - y0 + 2));
+      if (w < ar.w * 0.9 || h < ar.h * 0.9) c.frame = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, y0, w, h };
+    }
   };
 
   return c;

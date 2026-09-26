@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>G-Code</title>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+  <section class="left">
+    <header class="top">
+      <div class="brand"><span class="mark">G</span><span>G-Code</span></div>
+      <div class="status" id="status"><i class="dot"></i><span>connecting…</span></div>
+    </header>
+    <div class="prompt-wrap">
+      <textarea id="prompt" rows="3" spellcheck="false" placeholder="a jumping green sphere" autofocus></textarea>
+      <div class="hint">Describe anything — in English or Polish. The code rewrites itself as you type.</div>
+    </div>
+    <div class="examples" id="examples"></div>
+    <div class="code-head">
+      <span>code</span>
+      <span class="spacer"></span>
+      <span class="meta" id="meta"></span>
+      <button class="ghost" id="editBtn" title="Edit the code by hand">edit</button>
+      <button class="ghost" id="copyBtn" title="Copy code">copy</button>
+    </div>
+    <div class="code-wrap">
+      <pre id="code" class="code"></pre>
+      <textarea id="codeEdit" class="code code-edit" spellcheck="false" hidden></textarea>
+    </div>
+  </section>
+  <section class="right">
+    <div id="stage" class="stage"></div>
+    <div class="stage-bar">
+      <span id="slots" class="slots"></span>
+      <span class="spacer"></span>
+      <button class="ghost" id="restartBtn">restart</button>
+      <button class="solid" id="doodleBtn">✎ draw it yourself</button>
+    </div>
+    <div id="warn" class="warn" hidden></div>
+  </section>
+</main>
+<div id="doodle" class="doodle" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
