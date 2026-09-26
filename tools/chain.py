@@ -16,10 +16,14 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-WORK = ROOT / "Niepotrzebne" / "chain"
+# Lives outside ~/Downloads on purpose: macOS privacy protection stops
+# launchd jobs from reading ~/Downloads, so the LaunchAgent runs a copy of
+# this script from ~/.gcode-chain with its own venv (install.sh sets it up).
+HOME = Path.home() / ".gcode-chain"
+ROOT = HOME / "src"
+WORK = HOME / "state"
 WORK.mkdir(parents=True, exist_ok=True)
-PY = "/Users/jurek/Downloads/Claude/Projects/AIe/G-Images/.venv/bin/python"
+PY = str(HOME / "venv" / "bin" / "python")
 USER = "jerzysukiennik"
 PREP = f"{USER}/gcode-prep"
 TARGET_STEPS = 3400
@@ -76,9 +80,23 @@ def last_step(slug):
     return step
 
 
+LABEL = "com.gzowo.gcode-chain"
+PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+
+
+def unload():
+    """The chain is finished or stopped: remove its LaunchAgent."""
+    import os
+    if PLIST.exists():
+        PLIST.unlink()
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"], capture_output=True)
+        log("LaunchAgent removed")
+
+
 def stop(reason):
     (WORK / "STOP_REASON").write_text(reason)
     log("STOP: " + reason)
+    unload()
     sys.exit(1)
 
 
@@ -140,9 +158,13 @@ def dataset_ready():
 
 if __name__ == "__main__":
     once = "--once" in sys.argv
+    if (WORK / "DONE").exists() or (WORK / "STOP_REASON").exists():
+        unload()
+        sys.exit(0)
     while True:
         try:
             if decide():
+                unload()
                 break
         except subprocess.TimeoutExpired as e:
             log(f"timeout: {e}")
