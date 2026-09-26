@@ -17,8 +17,8 @@ import sys
 REPO = "https://github.com/JerzySukiennik/g-code.git"
 OUT = "/kaggle/working/run"
 
-# 16 x 30 x 1024 = 491,520 tokens/step; 3700 steps = 1.82B tokens.
-BATCH, ACCUM, STEPS, WARMUP = 16, 30, 3700, 200
+# 16 x 30 x 1024 = 491,520 tokens/step; 3400 steps = 1.67B tokens (~1.4 epochs).
+BATCH, ACCUM, STEPS, WARMUP = 16, 30, 3400, 200
 TIME_LIMIT = 11.2
 
 subprocess.run(["git", "clone", "--depth", "1", REPO, "/tmp/g-code"], check=True)
