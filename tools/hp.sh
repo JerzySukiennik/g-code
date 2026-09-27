@@ -17,6 +17,6 @@ case "$1" in
   serve)
     $SSH 'Get-CimInstance Win32_Process -Filter "Name=''python.exe''" | Where-Object { $_.CommandLine -like "*serve.py*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }' || true
     $SSH "powershell -ExecutionPolicy Bypass -File C:\\gcode\\launch.ps1 -cmd \"C:\\gcode\\.venv\\Scripts\\python C:\\gcode\\repo\\server\\serve.py --ckpt $2 --tokenizer C:\\gcode\\tokenizer.json --port 8765\" -log C:\\gcode\\serve.log" ;;
-  tunnel) exec ssh -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes -L 8765:localhost:8765 $HP ;;
+  tunnel) exec ssh -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes -L 8765:127.0.0.1:8765 $HP ;;
   *) sed -n '2,9p' "$0" ;;
 esac
