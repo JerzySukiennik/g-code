@@ -3,7 +3,12 @@ Unattended Kaggle chain for G-Code: prep -> pretrain sessions -> SFT.
 
 Idempotent: every run reads the live state of the kernels and does the one
 next thing (push a session, or nothing). Stops and writes STOP_REASON when a
-kernel ends in ERROR/CANCEL so a broken run never burns quota in a loop.
+kernel ends in ERROR/CANCEL or Kaggle rejects a push, so a broken run never
+burns quota or retries in a loop. A kernel Kaggle cannot be asked about
+(no network right after boot) is UNKNOWN and the run only waits: before, it
+counted as missing and a session was pushed again. The SFT kernel is
+gcode-finetune because Kaggle titles are shared with datasets and "gcode sft"
+belongs to the SFT dataset.
 
     python3 tools/chain.py            # loop until done (run detached)
     python3 tools/chain.py --once     # single decision, for debugging
@@ -26,6 +31,8 @@ WORK.mkdir(parents=True, exist_ok=True)
 PY = str(HOME / "venv" / "bin" / "python")
 USER = "jerzysukiennik"
 PREP = f"{USER}/gcode-prep"
+SFT = f"{USER}/gcode-finetune"
+SFT_DATA = f"{USER}/gcode-sft"
 TARGET_STEPS = 3400
 MAX_SESSIONS = 4
 LOG = WORK / "chain.log"
@@ -45,9 +52,11 @@ def kaggle(*args, timeout=600):
 
 def status(slug):
     rc, out = kaggle("kernels", "status", slug)
-    if rc != 0 or "has status" not in out:
+    if rc == 0 and "has status" in out:
+        return out.split("KernelWorkerStatus.")[-1].strip().strip('"')
+    if re.search(r"Cannot access kernel|\b40[34]\b|not found", out, re.I):
         return None
-    return out.split("KernelWorkerStatus.")[-1].strip().strip('"')
+    return "UNKNOWN"
 
 
 def push(slug, code_file, sources, gpu=True, datasets=()):
@@ -63,6 +72,8 @@ def push(slug, code_file, sources, gpu=True, datasets=()):
     (d / "kernel-metadata.json").write_text(json.dumps(meta, indent=2))
     rc, out = kaggle("kernels", "push", "-p", str(d))
     log(f"push {slug} sources={sources} -> {out[-200:]}")
+    if "409" in out:
+        stop(f"Kaggle rejected {slug} (409 Conflict: title or slug already taken)")
     return rc == 0
 
 
@@ -70,14 +81,14 @@ def last_step(slug):
     d = WORK / "out" / slug.split("/")[1]
     d.mkdir(parents=True, exist_ok=True)
     rc, out = kaggle("kernels", "output", slug, "-p", str(d), "--file-pattern", "log.jsonl", timeout=900)
-    step = 0
+    steps = []
     for p in d.rglob("log.jsonl"):
         for line in p.read_text().splitlines():
             try:
-                step = max(step, json.loads(line).get("step", 0))
+                steps.append(json.loads(line).get("step", 0))
             except json.JSONDecodeError:
                 pass
-    return step
+    return max(steps) if rc == 0 and steps else None
 
 
 LABEL = "com.gzowo.gcode-chain"
@@ -114,9 +125,15 @@ def decide():
     prev = None
     for s in sessions:
         st = status(s)
+        if st == "UNKNOWN":
+            log(f"{s}: Kaggle not answering, waiting")
+            return False
         if st is None:
             if prev:
                 step = last_step(prev)
+                if step is None:
+                    log(f"{prev}: log.jsonl unreadable, waiting")
+                    return False
                 log(f"{prev} finished at step {step}")
                 if step >= TARGET_STEPS:
                     return sft(prev)
@@ -133,15 +150,14 @@ def decide():
 
 
 def sft(last):
-    slug = f"{USER}/gcode-sft"
-    st = status(slug)
+    st = status(SFT)
     if st is None:
         if not dataset_ready():
             log("waiting for gcode-sft dataset")
             return False
-        push(slug, "kaggle/sft_kernel.py", [PREP, last], datasets=[f"{USER}/gcode-sft"])
+        push(SFT, "kaggle/sft_kernel.py", [PREP, last], datasets=[SFT_DATA])
         return False
-    if st in ("QUEUED", "RUNNING"):
+    if st in ("QUEUED", "RUNNING", "UNKNOWN"):
         log(f"sft {st}")
         return False
     if st == "COMPLETE":
@@ -152,7 +168,7 @@ def sft(last):
 
 
 def dataset_ready():
-    rc, out = kaggle("datasets", "status", f"{USER}/gcode-sft")
+    rc, out = kaggle("datasets", "status", SFT_DATA)
     return rc == 0 and "ready" in out.lower()
 
 
